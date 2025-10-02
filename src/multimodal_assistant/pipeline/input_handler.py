@@ -5,6 +5,7 @@ from multimodal_assistant.core.streams import AsyncStream
 from multimodal_assistant.engines.base import AudioChunk, ImageFrame
 import asyncio
 from multimodal_assistant.processors.vad import VADProcessor
+from multimodal_assistant.utils.logger import setup_logger
 
 class AudioInputHandler:
     """Handles microphone input with VAD"""
@@ -17,9 +18,11 @@ class AudioInputHandler:
         self.vad = VADProcessor()
         self.stream = None
         self.loop = None
+        self.logger = setup_logger("multimodal_assistant.input.audio")
 
     async def start_capture(self) -> AsyncStream[AudioChunk]:
         """Start audio capture stream"""
+        self.logger.info(f"Starting audio capture (sample_rate={self.sample_rate}, chunk_size={self.chunk_size})")
         output_stream = AsyncStream[AudioChunk]()
 
         # Store the main event loop for thread-safe async calls
@@ -27,7 +30,7 @@ class AudioInputHandler:
 
         def audio_callback(indata, frames, time, status):
             if status:
-                print(f"Audio error: {status}")
+                self.logger.error(f"Audio error: {status}")
 
             # Create task to process audio using thread-safe method
             audio_data = indata[:, 0].copy()  # Mono
@@ -46,6 +49,7 @@ class AudioInputHandler:
             callback=audio_callback
         )
         self.stream.start()
+        self.logger.info("Audio capture started")
 
         return output_stream
 
@@ -65,6 +69,7 @@ class AudioInputHandler:
     async def stop_capture(self):
         """Stop audio capture"""
         if self.stream:
+            self.logger.info("Stopping audio capture")
             self.stream.stop()
             self.stream.close()
 
@@ -74,9 +79,11 @@ class VideoInputHandler:
     def __init__(self, fps: int = 1):
         self.fps = fps
         self.cap = None
+        self.logger = setup_logger("multimodal_assistant.input.video")
 
     async def start_capture(self) -> AsyncStream[ImageFrame]:
         """Start video capture stream"""
+        self.logger.info(f"Starting video capture (fps={self.fps})")
         output_stream = AsyncStream[ImageFrame]()
 
         self.cap = cv2.VideoCapture(0)
@@ -97,14 +104,18 @@ class VideoInputHandler:
 
                     await output_stream.put(image_frame)
                     frame_id += 1
+                    if frame_id % 10 == 0:
+                        self.logger.debug(f"Captured {frame_id} frames")
 
                 # Control FPS
                 await asyncio.sleep(1.0 / self.fps)
 
         asyncio.create_task(_capture_loop())
+        self.logger.info("Video capture started")
         return output_stream
 
     async def stop_capture(self):
         """Stop video capture"""
         if self.cap:
+            self.logger.info("Stopping video capture")
             self.cap.release()

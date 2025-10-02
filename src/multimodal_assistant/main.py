@@ -1,6 +1,5 @@
 import asyncio
 import sys
-import logging
 from multimodal_assistant.core.event_bus import EventBus
 from multimodal_assistant.engines.stt_engine import FasterWhisperEngine
 from multimodal_assistant.engines.vision_engine import CLIPVisionEngine
@@ -21,24 +20,31 @@ class Vera:
         self.settings = settings or Settings()
 
         # Setup logging based on settings
-        log_level = logging.DEBUG if self.settings.debug_mode else getattr(logging, self.settings.log_level.upper())
-        self.logger = setup_logger("multimodal_assistant")
-        self.logger.setLevel(log_level)
+        # This creates the root logger for the entire application
+        self.logger = setup_logger("multimodal_assistant", self.settings.log_level)
 
-        # Set all child loggers to the same level
-        logging.getLogger("multimodal_assistant.coordinator").setLevel(log_level)
-        logging.getLogger("multimodal_assistant.engines").setLevel(log_level)
+        # All child loggers will inherit this level automatically
+        # Child loggers are created with names like:
+        # - multimodal_assistant.engines.stt
+        # - multimodal_assistant.engines.vision
+        # - multimodal_assistant.coordinator
+        # etc.
 
-        self.logger.info(f"Initializing Vera Assistant (debug_mode={self.settings.debug_mode})")
+        self.logger.info(f"Initializing Vera Assistant (log_level={self.settings.log_level})")
 
-        # Initialize performance monitor
-        self.perf_monitor = PerformanceMonitor() if self.settings.debug_mode else None
+        # Initialize performance monitor (enabled in DEBUG mode)
+        self.perf_monitor = PerformanceMonitor() if self.settings.log_level.upper() == "DEBUG" else None
 
         # Initialize components
         self.event_bus = EventBus()
         self.stt = FasterWhisperEngine(model_size=self.settings.stt_model_size)
         self.vision = CLIPVisionEngine()
-        self.llm = OllamaLLMEngine(model_name=self.settings.llm_model_name)
+        self.llm = OllamaLLMEngine(
+            model_name=self.settings.llm_model_name,
+            system_prompt=self.settings.system_prompt,
+            temperature=self.settings.temperature,
+            top_p=self.settings.top_p
+        )
         self.tts = KokoroTTSEngine()
 
         self.audio_input = AudioInputHandler(

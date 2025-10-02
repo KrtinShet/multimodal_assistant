@@ -3,6 +3,7 @@ import numpy as np
 from typing import AsyncIterator
 from .base import ISTTEngine, AudioChunk, Transcription
 import asyncio
+from multimodal_assistant.utils.logger import setup_logger
 
 class FasterWhisperEngine(ISTTEngine):
     """Faster-Whisper STT implementation optimized for M4"""
@@ -19,9 +20,11 @@ class FasterWhisperEngine(ISTTEngine):
         self.min_speech_duration = min_speech_ms / 1000.0
         self.silence_duration = silence_ms / 1000.0
         self.max_utterance_duration = max_utterance_ms / 1000.0
+        self.logger = setup_logger("multimodal_assistant.engines.stt")
 
     async def initialize(self):
         """Load model with CoreML optimization"""
+        self.logger.info(f"Initializing Faster-Whisper (model_size={self.model_size})")
         # Run in thread pool to avoid blocking
         loop = asyncio.get_running_loop()
         self.model = await loop.run_in_executor(
@@ -33,6 +36,7 @@ class FasterWhisperEngine(ISTTEngine):
                 cpu_threads=8  # Optimize for M4 Pro cores
             )
         )
+        self.logger.info("Faster-Whisper initialized successfully")
 
     async def transcribe_stream(
         self,
@@ -80,9 +84,11 @@ class FasterWhisperEngine(ISTTEngine):
 
         # Require minimum speech duration to avoid false positives
         if speech_duration < self.min_speech_duration:
+            self.logger.debug(f"Speech too short ({speech_duration:.2f}s), ignoring")
             return
 
         audio_data = np.concatenate(buffer)
+        self.logger.debug(f"Transcribing {speech_duration:.2f}s of speech")
 
         # Transcribe in thread pool
         loop = asyncio.get_running_loop()
@@ -97,6 +103,7 @@ class FasterWhisperEngine(ISTTEngine):
         )
 
         for segment in segments:
+            self.logger.info(f"Transcription: {segment.text}")
             yield Transcription(
                 text=segment.text,
                 confidence=segment.avg_logprob,

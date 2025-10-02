@@ -1,17 +1,23 @@
 import logging
 import sys
 
-def setup_logger(name: str = "multimodal_assistant") -> logging.Logger:
+def setup_logger(name: str = "multimodal_assistant", log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
+    # Convert string log level to logging constant
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logger.setLevel(level)
 
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
+    # Only add handler if logger doesn't have one already
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(level)
 
-    logger.addHandler(handler)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        handler.setFormatter(formatter)
+
+        logger.addHandler(handler)
+
     return logger

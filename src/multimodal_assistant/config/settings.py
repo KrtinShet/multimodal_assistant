@@ -25,6 +25,16 @@ class Settings:
     # TTS settings
     tts_sample_rate: int = 24000
 
-    # Logging & Debug settings
-    debug_mode: bool = False
+    # Logging settings
     log_level: str = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+
+    # LLM settings
+    system_prompt: str = (
+        "You are Lucy, a helpful voice assistant. "
+        "Respond naturally and conversationally. "
+        "Keep responses concise and clear. "
+        "Do not use markdown formatting, emojis, or special characters. "
+        "Speak as if having a natural conversation."
+    )
+    temperature: float = 0.7
+    top_p: float = 0.9

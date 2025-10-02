@@ -1,10 +1,10 @@
 from typing import Optional
-import logging
 from multimodal_assistant.core.event_bus import EventBus, Event
 from multimodal_assistant.core.streams import AsyncStream
 from multimodal_assistant.engines.base import *
 from multimodal_assistant.pipeline.output_handler import AudioOutputHandler, TextOutputHandler
 from multimodal_assistant.utils.performance import PerformanceMonitor
+from multimodal_assistant.utils.logger import setup_logger
 import asyncio
 
 class PipelineCoordinator:
@@ -29,7 +29,7 @@ class PipelineCoordinator:
         self.audio_output = audio_output
         self.text_output = text_output or TextOutputHandler()
         self.perf_monitor = perf_monitor
-        self.logger = logging.getLogger("multimodal_assistant.coordinator")
+        self.logger = setup_logger("multimodal_assistant.coordinator")
 
     async def process_multimodal(
         self,

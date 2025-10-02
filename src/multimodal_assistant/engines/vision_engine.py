@@ -3,6 +3,7 @@ from transformers import CLIPProcessor, CLIPVisionModel
 from .base import IVisionEngine, ImageFrame, VisionEmbedding
 import asyncio
 from PIL import Image
+from multimodal_assistant.utils.logger import setup_logger
 
 class CLIPVisionEngine(IVisionEngine):
     """CLIP vision encoder with MPS acceleration"""
@@ -12,9 +13,11 @@ class CLIPVisionEngine(IVisionEngine):
         self.processor = None
         self.model = None
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        self.logger = setup_logger("multimodal_assistant.engines.vision")
 
     async def initialize(self):
         """Load CLIP model"""
+        self.logger.info(f"Initializing CLIP Vision (model={self.model_name}, device={self.device})")
         loop = asyncio.get_event_loop()
 
         def _load():
@@ -28,9 +31,11 @@ class CLIPVisionEngine(IVisionEngine):
             return processor, model
 
         self.processor, self.model = await loop.run_in_executor(None, _load)
+        self.logger.info("CLIP Vision initialized successfully")
 
     async def encode_image(self, frame: ImageFrame) -> VisionEmbedding:
         """Encode image to embedding"""
+        self.logger.debug(f"Encoding image frame {frame.frame_id}")
         # Convert numpy to PIL
         image = Image.fromarray(frame.data)
 

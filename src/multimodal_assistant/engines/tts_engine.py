@@ -3,6 +3,7 @@ from typing import AsyncIterator
 from .base import ITTSEngine, AudioChunk
 import asyncio
 from pathlib import Path
+from multimodal_assistant.utils.logger import setup_logger
 
 class KokoroTTSEngine(ITTSEngine):
     """Kokoro TTS implementation using Python API"""
@@ -12,6 +13,7 @@ class KokoroTTSEngine(ITTSEngine):
         self.kokoro = None
         self.model_path = Path("assets/kokoro/kokoro-v1.0.onnx")
         self.voices_path = Path("assets/kokoro/voices-v1.0.bin")
+        self.logger = setup_logger("multimodal_assistant.engines.tts")
 
     async def initialize(self):
         """Initialize TTS"""
@@ -20,20 +22,21 @@ class KokoroTTSEngine(ITTSEngine):
 
             # Check if model files exist
             if not self.model_path.exists() or not self.voices_path.exists():
-                print(f"⚠️  Kokoro model files not found at {self.model_path.parent}")
-                print("TTS will be disabled, but the assistant will still work")
+                self.logger.warning(f"Kokoro model files not found at {self.model_path.parent}")
+                self.logger.warning("TTS will be disabled, but the assistant will still work")
                 self.kokoro = None
                 return
 
+            self.logger.info("Initializing Kokoro TTS")
             self.kokoro = Kokoro(str(self.model_path), str(self.voices_path))
-            print("✅ Kokoro TTS initialized")
+            self.logger.info("Kokoro TTS initialized successfully")
         except ImportError:
-            print("⚠️  Kokoro not found. Install: uv add kokoro-onnx")
-            print("TTS will be disabled, but the assistant will still work")
+            self.logger.warning("Kokoro not found. Install: uv add kokoro-onnx")
+            self.logger.warning("TTS will be disabled, but the assistant will still work")
             self.kokoro = None
         except Exception as e:
-            print(f"⚠️  Kokoro TTS initialization failed: {e}")
-            print("TTS will be disabled, but the assistant will still work")
+            self.logger.error(f"Kokoro TTS initialization failed: {e}")
+            self.logger.warning("TTS will be disabled, but the assistant will still work")
             self.kokoro = None
 
     async def synthesize_stream(
@@ -60,6 +63,7 @@ class KokoroTTSEngine(ITTSEngine):
                     sentence_buffer = []
 
                     if sentence:
+                        self.logger.debug(f"Synthesizing: {sentence}")
                         # Synthesize in thread pool
                         loop = asyncio.get_event_loop()
                         audio_data = await loop.run_in_executor(
@@ -69,6 +73,7 @@ class KokoroTTSEngine(ITTSEngine):
                         )
 
                         if audio_data is not None:
+                            self.logger.debug(f"Generated {len(audio_data)} audio samples")
                             yield AudioChunk(
                                 data=audio_data,
                                 sample_rate=self.sample_rate,
@@ -100,7 +105,7 @@ class KokoroTTSEngine(ITTSEngine):
 
             return samples
         except Exception as e:
-            print(f"TTS synthesis error: {e}")
+            self.logger.error(f"TTS synthesis error: {e}")
             return None
 
     async def shutdown(self):
