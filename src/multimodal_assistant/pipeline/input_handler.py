@@ -9,9 +9,11 @@ from multimodal_assistant.processors.vad import VADProcessor
 class AudioInputHandler:
     """Handles microphone input with VAD"""
 
-    def __init__(self, sample_rate: int = 16000):
+    def __init__(self, sample_rate: int = 16000, frame_duration_ms: int = 30):
         self.sample_rate = sample_rate
-        self.chunk_size = int(sample_rate * 0.1)  # 100ms chunks
+        self.frame_duration_ms = frame_duration_ms
+        # WebRTC VAD supports 10/20/30ms frames; default to 30ms
+        self.chunk_size = int(sample_rate * (frame_duration_ms / 1000.0))
         self.vad = VADProcessor()
         self.stream = None
         self.loop = None
@@ -40,6 +42,7 @@ class AudioInputHandler:
             samplerate=self.sample_rate,
             channels=1,
             blocksize=self.chunk_size,
+            dtype='float32',
             callback=audio_callback
         )
         self.stream.start()

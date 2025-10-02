@@ -19,7 +19,10 @@ class CLIPVisionEngine(IVisionEngine):
 
         def _load():
             processor = CLIPProcessor.from_pretrained(self.model_name)
-            model = CLIPVisionModel.from_pretrained(self.model_name)
+            model = CLIPVisionModel.from_pretrained(
+                self.model_name,
+                use_safetensors=False  # avoid redownloading large safetensor checkpoint
+            )
             model = model.to(self.device)
             model.eval()
             return processor, model

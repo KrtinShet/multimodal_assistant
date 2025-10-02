@@ -2,6 +2,7 @@ from typing import Optional
 from multimodal_assistant.core.event_bus import EventBus, Event
 from multimodal_assistant.core.streams import AsyncStream
 from multimodal_assistant.engines.base import *
+from multimodal_assistant.pipeline.output_handler import AudioOutputHandler
 import asyncio
 
 class PipelineCoordinator:
@@ -13,13 +14,15 @@ class PipelineCoordinator:
         vision_engine: IVisionEngine,
         llm_engine: ILLMEngine,
         tts_engine: ITTSEngine,
-        event_bus: EventBus
+        event_bus: EventBus,
+        audio_output: AudioOutputHandler | None = None
     ):
         self.stt = stt_engine
         self.vision = vision_engine
         self.llm = llm_engine
         self.tts = tts_engine
         self.event_bus = event_bus
+        self.audio_output = audio_output
 
     async def process_multimodal(
         self,
@@ -28,7 +31,6 @@ class PipelineCoordinator:
     ):
         """Process multimodal input through pipeline"""
 
-        # Step 1: Parallel STT and Vision processing
         transcription_task = asyncio.create_task(
             self._process_audio(audio_stream)
         )
@@ -39,21 +41,39 @@ class PipelineCoordinator:
                 self._process_vision(video_stream)
             )
 
-        # Wait for both to complete
-        transcription = await transcription_task
-        vision_embedding = await vision_task if vision_task else None
+        generator_task = None
 
-        # Step 2: LLM generation
-        response_stream = await self._generate_response(
-            transcription,
-            vision_embedding
-        )
+        try:
+            transcription = await transcription_task
+            vision_embedding = await vision_task if vision_task else None
 
-        # Step 3: Parallel text display and TTS
-        await asyncio.gather(
-            self._display_text(response_stream),
-            self._synthesize_speech(response_stream)
-        )
+            if not transcription.strip():
+                return
+
+            text_stream, tts_stream, generator_task = await self._generate_response(
+                transcription,
+                vision_embedding
+            )
+
+            await asyncio.gather(
+                self._display_text(text_stream),
+                self._synthesize_speech(tts_stream)
+            )
+        except asyncio.CancelledError:
+            transcription_task.cancel()
+            if vision_task:
+                vision_task.cancel()
+            if generator_task:
+                generator_task.cancel()
+            raise
+        finally:
+            if generator_task:
+                try:
+                    await generator_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:
+                    print(f"Error in response generator: {exc}")
 
     async def _process_audio(
         self,
@@ -69,9 +89,10 @@ class PipelineCoordinator:
 
         transcriptions = []
         async for transcription in self.stt.transcribe_stream(audio_stream):
-            transcriptions.append(transcription.text)
+            if transcription.text:
+                transcriptions.append(transcription.text.strip())
 
-        full_text = " ".join(transcriptions)
+        full_text = " ".join(transcriptions).strip()
 
         await self.event_bus.publish(Event(
             event_type="stt_complete",
@@ -88,7 +109,11 @@ class PipelineCoordinator:
     ) -> VisionEmbedding:
         """Process latest frame"""
         latest_frame = None
-        async for frame in video_stream:
+
+        while True:
+            frame = await video_stream.next()
+            if frame is None:
+                break
             latest_frame = frame
 
         if latest_frame:
@@ -99,7 +124,7 @@ class PipelineCoordinator:
         self,
         text: str,
         vision_embedding: Optional[VisionEmbedding]
-    ) -> AsyncStream[str]:
+    ) -> tuple[AsyncStream[str], AsyncStream[str], asyncio.Task]:
         """Generate LLM response"""
         await self.event_bus.publish(Event(
             event_type="llm_started",
@@ -108,25 +133,36 @@ class PipelineCoordinator:
             source="coordinator"
         ))
 
-        response_stream = AsyncStream[str]()
+        text_stream = AsyncStream[str]()
+        tts_stream = AsyncStream[str]()
 
         async def _generate():
             async for token in self.llm.generate_stream(text, vision_embedding):
-                await response_stream.put(token)
-            await response_stream.close()
+                await asyncio.gather(
+                    text_stream.put(token),
+                    tts_stream.put(token)
+                )
+            await asyncio.gather(
+                text_stream.close(),
+                tts_stream.close()
+            )
 
-        asyncio.create_task(_generate())
-        return response_stream
+        generator_task = asyncio.create_task(_generate())
+        return text_stream, tts_stream, generator_task
 
     async def _display_text(self, text_stream: AsyncStream[str]):
         """Display text as it's generated"""
         async for token in text_stream:
             print(token, end='', flush=True)
 
+        print()
+
     async def _synthesize_speech(self, text_stream: AsyncStream[str]):
         """Synthesize and play speech"""
         audio_stream = self.tts.synthesize_stream(text_stream)
-        # Play audio (implementation depends on audio library)
-        async for audio_chunk in audio_stream:
-            # Play using sounddevice or other audio library
-            pass
+        if self.audio_output is None:
+            async for _ in audio_stream:
+                pass
+            return
+
+        await self.audio_output.start_playback(audio_stream)

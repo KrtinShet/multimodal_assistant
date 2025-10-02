@@ -13,8 +13,12 @@ class AudioOutputHandler:
 
     async def start_playback(self, audio_stream: AsyncIterator[AudioChunk]):
         """Play audio stream"""
-        async for chunk in audio_stream:
-            await self._play_chunk(chunk)
+        try:
+            async for chunk in audio_stream:
+                await self._play_chunk(chunk)
+        except asyncio.CancelledError:
+            sd.stop()
+            raise
 
     async def _play_chunk(self, chunk: AudioChunk):
         """Play single audio chunk"""

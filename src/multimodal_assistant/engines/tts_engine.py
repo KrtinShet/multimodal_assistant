@@ -50,29 +50,33 @@ class KokoroTTSEngine(ITTSEngine):
 
         sentence_buffer = []
 
-        async for text in text_stream:
-            sentence_buffer.append(text)
+        try:
+            async for text in text_stream:
+                sentence_buffer.append(text)
 
-            # Wait for sentence end
-            if any(p in text for p in ['.', '!', '?', '\n']):
-                sentence = ''.join(sentence_buffer).strip()
-                sentence_buffer = []
+                # Wait for sentence end
+                if any(p in text for p in ['.', '!', '?', '\n']):
+                    sentence = ''.join(sentence_buffer).strip()
+                    sentence_buffer = []
 
-                if sentence:
-                    # Synthesize in thread pool
-                    loop = asyncio.get_event_loop()
-                    audio_data = await loop.run_in_executor(
-                        None,
-                        self._synthesize_sentence,
-                        sentence
-                    )
-
-                    if audio_data is not None:
-                        yield AudioChunk(
-                            data=audio_data,
-                            sample_rate=self.sample_rate,
-                            timestamp=asyncio.get_event_loop().time()
+                    if sentence:
+                        # Synthesize in thread pool
+                        loop = asyncio.get_event_loop()
+                        audio_data = await loop.run_in_executor(
+                            None,
+                            self._synthesize_sentence,
+                            sentence
                         )
+
+                        if audio_data is not None:
+                            yield AudioChunk(
+                                data=audio_data,
+                                sample_rate=self.sample_rate,
+                                timestamp=asyncio.get_event_loop().time()
+                            )
+        except asyncio.CancelledError:
+            # Propagate cancellation after cleanup
+            raise
 
     def _synthesize_sentence(self, text: str) -> np.ndarray:
         """Synthesize single sentence (blocking)"""
@@ -87,6 +91,8 @@ class KokoroTTSEngine(ITTSEngine):
                 speed=1.0,
                 lang='en-us'
             )
+
+            self.sample_rate = sample_rate
 
             # Ensure float32 format
             if samples.dtype != np.float32:

@@ -6,6 +6,7 @@ from multimodal_assistant.engines.llm_engine import OllamaLLMEngine
 from multimodal_assistant.engines.tts_engine import KokoroTTSEngine
 from multimodal_assistant.pipeline.input_handler import AudioInputHandler, VideoInputHandler
 from multimodal_assistant.pipeline.coordinator import PipelineCoordinator
+from multimodal_assistant.pipeline.output_handler import AudioOutputHandler
 
 class MultimodalAssistant:
     """Main application class"""
@@ -20,13 +21,15 @@ class MultimodalAssistant:
 
         self.audio_input = AudioInputHandler()
         self.video_input = VideoInputHandler(fps=1)
+        self.audio_output = AudioOutputHandler()
 
         self.coordinator = PipelineCoordinator(
             stt_engine=self.stt,
             vision_engine=self.vision,
             llm_engine=self.llm,
             tts_engine=self.tts,
-            event_bus=self.event_bus
+            event_bus=self.event_bus,
+            audio_output=self.audio_output
         )
 
     async def initialize(self):
@@ -52,22 +55,22 @@ class MultimodalAssistant:
         print("Listening... (Press Ctrl+C to stop)")
 
         try:
-            # Process indefinitely
             while True:
                 await self.coordinator.process_multimodal(
                     audio_stream,
                     video_stream
                 )
-                await asyncio.sleep(0.1)
-
-        except KeyboardInterrupt:
-            print("\nShutting down...")
+                await asyncio.sleep(0.05)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            print("\nStopping assistant...")
+        finally:
             await self.shutdown()
 
     async def shutdown(self):
         """Cleanup"""
         await self.audio_input.stop_capture()
         await self.video_input.stop_capture()
+        await self.audio_output.stop_playback()
 
         await asyncio.gather(
             self.stt.shutdown(),
