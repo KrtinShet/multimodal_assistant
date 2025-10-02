@@ -17,10 +17,14 @@ class Settings:
 
     # Video settings
     video_fps: int = 1
-    enable_vision: bool = True
+    enable_vision: bool = False
 
     # VAD settings
-    vad_aggressiveness: int = 3  # 0-3, higher = more aggressive
+    vad_aggressiveness: int = 5  # 0-3, higher = more aggressive
 
     # TTS settings
     tts_sample_rate: int = 24000
+
+    # Logging & Debug settings
+    debug_mode: bool = False
+    log_level: str = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
