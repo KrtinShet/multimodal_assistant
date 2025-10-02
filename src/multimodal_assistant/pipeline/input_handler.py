@@ -14,18 +14,27 @@ class AudioInputHandler:
         self.chunk_size = int(sample_rate * 0.1)  # 100ms chunks
         self.vad = VADProcessor()
         self.stream = None
+        self.loop = None
 
     async def start_capture(self) -> AsyncStream[AudioChunk]:
         """Start audio capture stream"""
         output_stream = AsyncStream[AudioChunk]()
 
+        # Store the main event loop for thread-safe async calls
+        self.loop = asyncio.get_running_loop()
+
         def audio_callback(indata, frames, time, status):
             if status:
                 print(f"Audio error: {status}")
 
-            # Create task to process audio
+            # Create task to process audio using thread-safe method
             audio_data = indata[:, 0].copy()  # Mono
-            asyncio.create_task(self._process_audio(audio_data, output_stream))
+
+            # Schedule the coroutine in the main event loop from this thread
+            asyncio.run_coroutine_threadsafe(
+                self._process_audio(audio_data, output_stream),
+                self.loop
+            )
 
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,

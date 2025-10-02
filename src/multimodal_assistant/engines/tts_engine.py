@@ -2,6 +2,7 @@ import numpy as np
 from typing import AsyncIterator
 from .base import ITTSEngine, AudioChunk
 import asyncio
+from pathlib import Path
 
 class KokoroTTSEngine(ITTSEngine):
     """Kokoro TTS implementation using Python API"""
@@ -9,17 +10,27 @@ class KokoroTTSEngine(ITTSEngine):
     def __init__(self):
         self.sample_rate = 24000
         self.kokoro = None
+        self.model_path = Path("assets/kokoro/kokoro-v1.0.onnx")
+        self.voices_path = Path("assets/kokoro/voices-v1.0.bin")
 
     async def initialize(self):
         """Initialize TTS"""
         try:
             from kokoro_onnx import Kokoro
-            self.kokoro = Kokoro("kokoro-v0_19.onnx", "voices.json")
+
+            # Check if model files exist
+            if not self.model_path.exists() or not self.voices_path.exists():
+                print(f"⚠️  Kokoro model files not found at {self.model_path.parent}")
+                print("TTS will be disabled, but the assistant will still work")
+                self.kokoro = None
+                return
+
+            self.kokoro = Kokoro(str(self.model_path), str(self.voices_path))
             print("✅ Kokoro TTS initialized")
         except ImportError:
-            raise RuntimeError(
-                "Kokoro not found. Install: uv add kokoro-onnx"
-            )
+            print("⚠️  Kokoro not found. Install: uv add kokoro-onnx")
+            print("TTS will be disabled, but the assistant will still work")
+            self.kokoro = None
         except Exception as e:
             print(f"⚠️  Kokoro TTS initialization failed: {e}")
             print("TTS will be disabled, but the assistant will still work")
@@ -69,8 +80,13 @@ class KokoroTTSEngine(ITTSEngine):
             return None
 
         try:
-            # Generate speech using Kokoro API
-            samples, sample_rate = self.kokoro.create(text, voice='af_sky', speed=1.0)
+            # Generate speech using Kokoro API (matching your working implementation)
+            samples, sample_rate = self.kokoro.create(
+                text=text,
+                voice='af_sky',  # Using a default voice
+                speed=1.0,
+                lang='en-us'
+            )
 
             # Ensure float32 format
             if samples.dtype != np.float32:
