@@ -208,7 +208,8 @@ class Vera:
 
         self.logger.info("✓ Shutdown complete")
 
-async def main():
+async def _async_main():
+    """Async entry point for the application."""
     assistant = Vera()
     await assistant.initialize()
     try:
@@ -217,5 +218,13 @@ async def main():
         print("\nKeyboard interrupt received. Shutting down assistant...")
         await assistant.shutdown()
 
+def main():
+    """Synchronous CLI entrypoint.
+
+    This wraps the async application entry in asyncio.run so console_scripts
+    can invoke it without returning an un-awaited coroutine.
+    """
+    asyncio.run(_async_main())
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
