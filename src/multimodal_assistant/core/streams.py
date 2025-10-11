@@ -13,15 +13,19 @@ class AsyncStream(Generic[T]):
         self._closed = False
 
     async def next(self) -> Optional[T]:
-        """Get next item from stream"""
-        if self._closed and self._queue.empty():
-            return None
+        """Get next item from stream, waiting until data or closure."""
 
-        try:
-            item = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-            return item
-        except asyncio.TimeoutError:
-            return None
+        while True:
+            if self._closed and self._queue.empty():
+                return None
+
+            try:
+                item = await asyncio.wait_for(self._queue.get(), timeout=0.5)
+                return item
+            except asyncio.TimeoutError:
+                if self._closed and self._queue.empty():
+                    return None
+                continue
 
     async def put(self, item: T):
         """Add item to stream"""

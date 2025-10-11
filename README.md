@@ -5,6 +5,8 @@ A production-ready multimodal AI assistant optimized for Apple M4 Pro with 24GB 
 ## Features
 
 - Ultra-low latency voice interaction
+- Real-time, interruptible voice with automatic barge-in and resume
+- Production-grade AEC via WebRTC AudioProcessing backend (optional)
 - Multimodal support (voice + vision)
 - Streaming-first architecture
 - MPS acceleration for Apple Silicon

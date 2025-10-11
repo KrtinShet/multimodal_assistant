@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import sys
 from multimodal_assistant.core.event_bus import EventBus
 from multimodal_assistant.engines.stt_engine import FasterWhisperEngine
@@ -11,6 +12,8 @@ from multimodal_assistant.pipeline.output_handler import AudioOutputHandler, Tex
 from multimodal_assistant.config.settings import Settings
 from multimodal_assistant.utils.logger import setup_logger
 from multimodal_assistant.utils.performance import PerformanceMonitor
+from multimodal_assistant.processors.webrtc_apm import WebRtcApmAEC as _MaybeApmAEC
+from multimodal_assistant.processors.aec_core import IAEC
 
 class Vera:
     """Main application class"""
@@ -49,12 +52,25 @@ class Vera:
         self.tts = KokoroTTSEngine()
 
         self.audio_input = AudioInputHandler(
-            sample_rate=self.settings.audio_sample_rate
+            sample_rate=self.settings.audio_sample_rate,
+            frame_duration_ms=self.settings.audio_frame_duration_ms,
+            vad_aggressiveness=self.settings.vad_aggressiveness,
+            enable_aec=self.settings.enable_aec,
+            echo_suppression_strength=self.settings.echo_suppression_strength,
+            echo_gate_correlation=self.settings.echo_gate_correlation,
+            echo_gate_near_far_ratio=self.settings.echo_gate_near_far_ratio,
+            input_device=self.settings.audio_input_device,
         )
         self.video_input = None
         self.video_enabled = False
         self.video_stream = None
-        self.audio_output = AudioOutputHandler()
+        self.audio_enabled = True  # Audio starts enabled by default
+        self.audio_output = AudioOutputHandler(
+            sample_rate=self.settings.tts_sample_rate,
+            frame_duration_ms=self.settings.playback_frame_duration_ms,
+            reference_window_secs=self.settings.aec_reference_window_s,
+            output_device=self.settings.audio_output_device,
+        )
         self.text_output = TextOutputHandler()
 
         self.coordinator = PipelineCoordinator(
@@ -66,7 +82,9 @@ class Vera:
             audio_output=self.audio_output,
             text_output=self.text_output,
             perf_monitor=self.perf_monitor,
-            audio_input=self.audio_input
+            audio_input=self.audio_input,
+            settings=self.settings,
+            audio_enabled_callback=lambda: self.audio_enabled,
         )
 
     async def initialize(self):
@@ -82,6 +100,28 @@ class Vera:
             self.llm.initialize(),
             self.tts.initialize()
         )
+
+        # Setup AEC backend wiring
+        if self.settings.enable_aec and self.settings.aec_backend == "webrtc_apm":
+            try:
+                apm: IAEC = _MaybeApmAEC(
+                    sample_rate_hz=self.settings.apm_sample_rate_hz,
+                    frames_per_buffer=self.settings.apm_sample_rate_hz // 100,
+                    enable_aec3=True,
+                    enable_hpf=self.settings.apm_enable_hpf,
+                    enable_ns=self.settings.apm_enable_ns,
+                    enable_agc=self.settings.apm_enable_agc,
+                    stream_delay_ms=self.settings.apm_stream_delay_ms,
+                    lib_path=self.settings.apm_lib_path,
+                )
+                # Inject into input and have output push reverse frames
+                self.audio_input.set_webrtc_apm(apm)
+                self.audio_output.register_reverse_consumer(apm.push_reverse)
+                self.logger.info("Using WebRTC APM for AEC")
+            except Exception as e:
+                self.logger.warning(
+                    f"WebRTC APM not available ({e}); falling back to correlation AEC"
+                )
 
         self.logger.info("✓ All engines ready!")
 
@@ -120,6 +160,37 @@ class Vera:
         else:
             await self.enable_video()
 
+    async def enable_audio(self):
+        """Enable audio output"""
+        if self.audio_enabled:
+            self.logger.info("Audio output already enabled")
+            return
+
+        self.logger.debug("Enabling audio output")
+        self.audio_enabled = True
+        self.logger.info("✓ Audio output enabled")
+
+    async def disable_audio(self):
+        """Disable audio output"""
+        if not self.audio_enabled:
+            self.logger.info("Audio output already disabled")
+            return
+
+        self.logger.debug("Disabling audio output")
+        # Stop any active audio playback
+        if self.audio_output:
+            await self.audio_output.stop_playback()
+        self.audio_enabled = False
+        self.logger.info("✓ Audio output disabled")
+
+    async def toggle_audio(self):
+        """Toggle audio on/off"""
+        self.logger.debug("Toggling audio")
+        if self.audio_enabled:
+            await self.disable_audio()
+        else:
+            await self.enable_audio()
+
     async def _keyboard_listener(self):
         """Listen for keyboard commands in the background"""
         loop = asyncio.get_event_loop()
@@ -136,6 +207,8 @@ class Vera:
 
                 if command.lower() == 'v':
                     await self.toggle_video()
+                elif command.lower() == 'a':
+                    await self.toggle_audio()
                 elif command.lower() == 'q':
                     self.logger.info("Quit command received")
                     raise KeyboardInterrupt
@@ -159,26 +232,26 @@ class Vera:
             await self.enable_video()
 
         self.logger.info("Listening... (Press Ctrl+C to stop)")
-        self.logger.info("Commands: 'v' + Enter = toggle video | 'q' + Enter = quit")
+        self.logger.info("Commands: 'v' + Enter = toggle video | 'a' + Enter = toggle audio | 'q' + Enter = quit")
 
         # Start keyboard listener in background
         keyboard_task = asyncio.create_task(self._keyboard_listener())
 
+        coordinator_task = asyncio.create_task(
+            self.coordinator.run(audio_stream, self.video_stream)
+        )
+
         try:
-            while True:
-                await self.coordinator.process_multimodal(
-                    audio_stream,
-                    self.video_stream
-                )
-                await asyncio.sleep(0.05) # 50ms
+            await coordinator_task
         except (KeyboardInterrupt, asyncio.CancelledError):
             self.logger.info("\nStopping assistant...")
+            coordinator_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await coordinator_task
         finally:
             keyboard_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await keyboard_task
-            except asyncio.CancelledError:
-                pass
             await self.shutdown()
 
     async def shutdown(self):

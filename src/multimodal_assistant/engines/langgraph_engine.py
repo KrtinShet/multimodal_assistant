@@ -46,20 +46,33 @@ class LangGraphAgentEngine(ILLMEngine):
         """Initialize LangGraph agent with Ollama LLM."""
         self.logger.info(f"Initializing LangGraph Agent (model={self.model_name})")
 
-        # Initialize Ollama LLM
-        self.llm = ChatOllama(
-            model=self.model_name,
-            temperature=self.temperature,
-            top_p=self.top_p,
-        )
+        try:
+            # Initialize Ollama LLM
+            self.logger.debug("Creating ChatOllama instance...")
+            self.llm = ChatOllama(
+                model=self.model_name,
+                temperature=self.temperature,
+                top_p=self.top_p,
+            )
+            self.logger.debug(f"ChatOllama created: {self.llm}")
 
-        # Create memory saver for conversation history
-        self.checkpointer = MemorySaver()
+            # Create memory saver for conversation history
+            self.logger.debug("Creating MemorySaver...")
+            self.checkpointer = MemorySaver()
+            self.logger.debug(f"MemorySaver created: {self.checkpointer}")
 
-        # Build the agent graph
-        await self._build_graph()
+            # Build the agent graph
+            self.logger.debug("Building state graph...")
+            await self._build_graph()
+            self.logger.debug(f"Graph built: {self.graph}")
 
-        self.logger.info("LangGraph Agent initialized successfully")
+            if self.graph is None:
+                raise RuntimeError("Graph is None after _build_graph()")
+
+            self.logger.info("LangGraph Agent initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize LangGraph Agent: {e}", exc_info=True)
+            raise
 
     async def _build_graph(self):
         """Build the LangGraph state graph."""
@@ -95,6 +108,16 @@ class LangGraphAgentEngine(ILLMEngine):
         vision_embedding: Optional[VisionEmbedding] = None
     ) -> AsyncIterator[str]:
         """Stream generation using LangGraph agent."""
+
+        # Safety check
+        if self.graph is None:
+            self.logger.error("Graph is not initialized! Attempting to re-initialize...")
+            try:
+                await self.initialize()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize graph: {e}")
+                yield "I apologize, but I'm not ready yet. Please try again in a moment."
+                return
 
         # Prepare the user message
         if vision_embedding is not None:

@@ -8,6 +8,9 @@ def setup_logger(name: str = "multimodal_assistant", log_level: str = "INFO") ->
     level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(level)
 
+    # Prevent messages from being handled twice by parent/root handlers
+    logger.propagate = False
+
     # Only add handler if logger doesn't have one already
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)

@@ -114,3 +114,22 @@ class FasterWhisperEngine(ISTTEngine):
     async def shutdown(self):
         """Cleanup"""
         self.model = None
+
+    async def transcribe_audio(self, audio_data: np.ndarray) -> str:
+        """Transcribe a single audio buffer."""
+
+        if audio_data.size == 0:
+            return ""
+
+        loop = asyncio.get_running_loop()
+        segments, _ = await loop.run_in_executor(
+            None,
+            lambda: self.model.transcribe(
+                audio_data,
+                language="en",
+                beam_size=1,
+                vad_filter=False,
+            ),
+        )
+
+        return " ".join(segment.text.strip() for segment in segments if segment.text).strip()

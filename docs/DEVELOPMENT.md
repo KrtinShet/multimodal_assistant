@@ -84,6 +84,19 @@ All engines implement common interfaces:
 Audio Input → VAD → STT ──┐
                            ├─→ LLM → TTS → Audio Output
 Video Input → Vision ──────┘
+
+### Real-Time Voice Loop
+
+- Mic capture runs continuously (10 ms frames) with optional echo suppression.
+- Coordinator monitors VAD and auto-detects utterances, barge-in, and transient noise.
+- LLM + TTS stream in parallel; playback can pause/resume instantly while the partial assistant text is cached for “continue” requests.
+
+### WebRTC AEC (APM) Backend
+
+- Build native shim: see `native/webrtc_apm/BUILD.md`. On macOS: `brew install webrtc-audio-processing` then build `libapm_shim.dylib`.
+- Enable in settings: `aec_backend="webrtc_apm"` and `enable_aec=True`.
+- The output handler pushes each 10 ms playback frame (resampled to 16 kHz) to APM via `push_reverse`, and the input handler processes 10 ms near frames through `process_near` before VAD.
+- Fallback correlation AEC remains available with `aec_backend="fallback"`.
 ```
 
 ## Development Workflow

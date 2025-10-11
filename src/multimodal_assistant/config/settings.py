@@ -5,6 +5,7 @@ class Settings:
     # Audio settings
     audio_sample_rate: int = 16000
     audio_chunk_duration_ms: int = 100
+    audio_frame_duration_ms: int = 10
 
     # Model settings
     stt_model_size: str = "small"
@@ -19,14 +20,37 @@ class Settings:
     video_fps: int = 1
     enable_vision: bool = False
 
-    # VAD settings
-    vad_aggressiveness: int = 5  # 0-3, higher = more aggressive
+    # VAD / audio frontend settings
+    vad_aggressiveness: int = 3  # 0-3, higher = more aggressive
+    # AEC backend selection
+    aec_backend: str = "webrtc_apm"  # "webrtc_apm" | "fallback"
+    enable_aec: bool = True
+    echo_suppression_strength: float = 0.6  # for fallback AEC only
+    aec_reference_window_s: float = 2.0     # for fallback AEC only
+    playback_frame_duration_ms: int = 20
+    min_user_speech_ms: int = 250
+    user_silence_ms: int = 320
+    noise_pause_ms: int = 120
+    noise_resume_ms: int = 450
+    noise_rms_threshold: float = 0.015
+    echo_gate_correlation: float = 0.35
+    echo_gate_near_far_ratio: float = 0.4
+    # WebRTC APM tuning
+    apm_sample_rate_hz: int = 16000
+    apm_stream_delay_ms: int = 60
+    apm_enable_ns: bool = True
+    apm_enable_agc: bool = True
+    apm_enable_hpf: bool = True
+    apm_lib_path: str | None = "/Users/krtinshet/Development/vera-assistant/native/webrtc_apm/dist/libapm_shim.dylib"
 
     # TTS settings
     tts_sample_rate: int = 24000
+    # Optional audio device selection (sounddevice device id or name)
+    audio_input_device: int | str | None = None
+    audio_output_device: int | str | None = None
 
     # Logging settings
-    log_level: str = "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+    log_level: str = "DEBUG"  # "DEBUG", "INFO", "WARNING", "ERROR"
 
     # LLM settings
     system_prompt: str = (
