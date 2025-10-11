@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from multimodal_assistant.core.event_bus import EventBus, Event
 from multimodal_assistant.core.streams import AsyncStream
 from multimodal_assistant.engines.base import *
@@ -6,6 +6,9 @@ from multimodal_assistant.pipeline.output_handler import AudioOutputHandler, Tex
 from multimodal_assistant.utils.performance import PerformanceMonitor
 from multimodal_assistant.utils.logger import setup_logger
 import asyncio
+
+if TYPE_CHECKING:
+    from multimodal_assistant.pipeline.input_handler import AudioInputHandler
 
 class PipelineCoordinator:
     """Orchestrates the complete pipeline"""
@@ -19,7 +22,8 @@ class PipelineCoordinator:
         event_bus: EventBus,
         audio_output: AudioOutputHandler | None = None,
         text_output: TextOutputHandler | None = None,
-        perf_monitor: PerformanceMonitor | None = None
+        perf_monitor: PerformanceMonitor | None = None,
+        audio_input: "AudioInputHandler | None" = None
     ):
         self.stt = stt_engine
         self.vision = vision_engine
@@ -29,6 +33,7 @@ class PipelineCoordinator:
         self.audio_output = audio_output
         self.text_output = text_output or TextOutputHandler()
         self.perf_monitor = perf_monitor
+        self.audio_input = audio_input
         self.logger = setup_logger("multimodal_assistant.coordinator")
 
     async def process_multimodal(
@@ -228,7 +233,16 @@ class PipelineCoordinator:
                 self.perf_monitor.end_timer("tts")
             return
 
-        await self.audio_output.start_playback(audio_stream)
+        # Mute microphone during TTS playback to prevent echo
+        if self.audio_input:
+            self.audio_input.mute()
+
+        try:
+            await self.audio_output.start_playback(audio_stream)
+        finally:
+            # Unmute microphone after TTS completes
+            if self.audio_input:
+                self.audio_input.unmute()
 
         if self.perf_monitor:
             latency = self.perf_monitor.end_timer("tts")

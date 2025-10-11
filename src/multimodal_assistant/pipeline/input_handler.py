@@ -19,6 +19,7 @@ class AudioInputHandler:
         self.stream = None
         self.loop = None
         self.logger = setup_logger("multimodal_assistant.input.audio")
+        self.is_muted = False  # Flag to mute input during TTS playback
 
     async def start_capture(self) -> AsyncStream[AudioChunk]:
         """Start audio capture stream"""
@@ -55,6 +56,10 @@ class AudioInputHandler:
 
     async def _process_audio(self, audio_data: np.ndarray, stream: AsyncStream):
         """Process audio with VAD"""
+        # Skip processing if muted (during TTS playback to prevent echo)
+        if self.is_muted:
+            return
+
         is_speech = self.vad.is_speech(audio_data, self.sample_rate)
 
         chunk = AudioChunk(
@@ -65,6 +70,16 @@ class AudioInputHandler:
         )
 
         await stream.put(chunk)
+
+    def mute(self):
+        """Mute audio input (for echo cancellation during TTS)"""
+        self.is_muted = True
+        self.logger.debug("Audio input muted")
+
+    def unmute(self):
+        """Unmute audio input"""
+        self.is_muted = False
+        self.logger.debug("Audio input unmuted")
 
     async def stop_capture(self):
         """Stop audio capture"""

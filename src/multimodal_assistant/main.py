@@ -3,7 +3,7 @@ import sys
 from multimodal_assistant.core.event_bus import EventBus
 from multimodal_assistant.engines.stt_engine import FasterWhisperEngine
 from multimodal_assistant.engines.vision_engine import CLIPVisionEngine
-from multimodal_assistant.engines.llm_engine import OllamaLLMEngine
+from multimodal_assistant.engines.langgraph_engine import LangGraphAgentEngine
 from multimodal_assistant.engines.tts_engine import KokoroTTSEngine
 from multimodal_assistant.pipeline.input_handler import AudioInputHandler, VideoInputHandler
 from multimodal_assistant.pipeline.coordinator import PipelineCoordinator
@@ -39,7 +39,8 @@ class Vera:
         self.event_bus = EventBus()
         self.stt = FasterWhisperEngine(model_size=self.settings.stt_model_size)
         self.vision = CLIPVisionEngine()
-        self.llm = OllamaLLMEngine(
+        # Use LangGraph agent instead of simple Ollama
+        self.llm = LangGraphAgentEngine(
             model_name=self.settings.llm_model_name,
             system_prompt=self.settings.system_prompt,
             temperature=self.settings.temperature,
@@ -64,7 +65,8 @@ class Vera:
             event_bus=self.event_bus,
             audio_output=self.audio_output,
             text_output=self.text_output,
-            perf_monitor=self.perf_monitor
+            perf_monitor=self.perf_monitor,
+            audio_input=self.audio_input
         )
 
     async def initialize(self):
