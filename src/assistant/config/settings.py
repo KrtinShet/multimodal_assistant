@@ -21,7 +21,11 @@ class Settings:
     enable_vision: bool = False
 
     # VAD / audio frontend settings
-    vad_aggressiveness: int = 3  # 0-3, higher = more aggressive
+    vad_aggressiveness: int = 3  # 0-3, higher = more aggressive filtering
+    vad_energy_threshold_ratio: float = 2.5  # Multiplier above noise floor for speech
+    vad_noise_floor_adaptation_rate: float = 0.01  # How quickly noise floor adapts (0-1)
+    vad_smoothing_window: int = 5  # Frames for majority voting to prevent jitter
+
     # AEC backend selection
     aec_backend: str = "webrtc_apm"  # "webrtc_apm" | "fallback"
     enable_aec: bool = True
@@ -32,9 +36,12 @@ class Settings:
     user_silence_ms: int = 320
     noise_pause_ms: int = 120
     noise_resume_ms: int = 450
-    noise_rms_threshold: float = 0.015
+    noise_rms_threshold: float = 0.015  # Minimum energy threshold for VAD
     echo_gate_correlation: float = 0.35
     echo_gate_near_far_ratio: float = 0.4
+
+    # STT real-time settings
+    stt_pre_roll_ms: int = 300  # Pre-roll buffer to capture speech start
     # WebRTC APM tuning
     apm_sample_rate_hz: int = 16000
     apm_stream_delay_ms: int = 60

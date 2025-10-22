@@ -9,13 +9,17 @@ from assistant.core.streams import AsyncStream
 from assistant.engines.base import AudioChunk
 from assistant.config.settings import Settings
 from assistant.utils.logger import setup_logger
+from assistant.processors.vad import ImprovedVADProcessor
 
 
 class AudioInputHandler:
-    """Handles microphone input with basic VAD and echo cancellation support.
+    """Handles microphone input with advanced VAD and echo cancellation support.
 
-    This is a simplified implementation providing core audio capture functionality.
-    For production use, integrate VAD processors and AEC modules.
+    Features improved Voice Activity Detection with:
+    - WebRTC VAD integration
+    - Adaptive noise floor estimation
+    - Multi-stage speech detection
+    - Smoothing for stable detection
     """
 
     def __init__(
@@ -37,7 +41,20 @@ class AudioInputHandler:
         self.logger = setup_logger("assistant.input.audio", settings.log_level)
         self.reference_provider: Optional[Callable[[int], np.ndarray]] = None
 
+        # Initialize improved VAD processor
+        self.vad_processor = ImprovedVADProcessor(
+            aggressiveness=settings.vad_aggressiveness,
+            sample_rate=self.sample_rate,
+            energy_threshold_ratio=settings.vad_energy_threshold_ratio,
+            noise_floor_adaptation_rate=settings.vad_noise_floor_adaptation_rate,
+            smoothing_window=settings.vad_smoothing_window,
+            min_energy_threshold=settings.noise_rms_threshold,
+            log_level=settings.log_level,
+        )
+
         self._running = False
+        self._frame_count = 0
+        self._last_metrics_log = 0.0
 
     def set_reference_provider(
         self,
@@ -96,7 +113,7 @@ class AudioInputHandler:
         return output_stream
 
     async def _process_audio(self, audio_data: np.ndarray, stream: AsyncStream):
-        """Process audio frame and push to downstream consumers.
+        """Process audio frame with advanced VAD and push to downstream consumers.
 
         Args:
             audio_data: Raw audio samples
@@ -105,12 +122,9 @@ class AudioInputHandler:
         if not self._running:
             return
 
-        # Basic processing - in production, add VAD and AEC here
+        # Apply improved VAD processing
         processed = audio_data.copy()
-
-        # Simple energy-based speech detection
-        energy = np.sqrt(np.mean(processed ** 2))
-        is_speech = energy > 0.01  # Basic threshold
+        is_speech = self.vad_processor.is_speech(processed)
 
         chunk = AudioChunk(
             data=processed,
@@ -121,11 +135,46 @@ class AudioInputHandler:
 
         await stream.put(chunk)
 
+        # Periodic metrics logging (every 5 seconds)
+        self._frame_count += 1
+        current_time = asyncio.get_event_loop().time()
+        if current_time - self._last_metrics_log >= 5.0:
+            metrics = self.vad_processor.get_metrics()
+            self.logger.debug(
+                f"VAD Metrics: speech_ratio={metrics.speech_ratio:.2%}, "
+                f"noise_floor={metrics.current_noise_floor:.4f}, "
+                f"threshold={metrics.energy_threshold:.4f}, "
+                f"frames={metrics.total_frames}"
+            )
+            self._last_metrics_log = current_time
+
     async def stop_capture(self):
         """Stop audio capture and release resources."""
         if self.stream:
-            self.logger.info("Stopping audio capture")
+            # Log final VAD metrics
+            metrics = self.vad_processor.get_metrics()
+            self.logger.info(
+                f"Stopping audio capture - Final VAD stats: "
+                f"speech_ratio={metrics.speech_ratio:.2%}, "
+                f"total_frames={metrics.total_frames}"
+            )
+
             self._running = False
             self.stream.stop()
             self.stream.close()
             self.stream = None
+
+    def get_vad_metrics(self):
+        """Get current VAD metrics for monitoring.
+
+        Returns:
+            VADMetrics object with current statistics
+        """
+        return self.vad_processor.get_metrics()
+
+    def reset_vad(self):
+        """Reset VAD state and metrics."""
+        self.vad_processor.reset()
+        self._frame_count = 0
+        self._last_metrics_log = 0.0
+        self.logger.info("VAD state reset")
